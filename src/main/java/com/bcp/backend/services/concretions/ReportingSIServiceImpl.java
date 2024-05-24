@@ -17,13 +17,16 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.io.File;
 import java.io.FilenameFilter;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Files;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Date;
-import java.util.List;
-
+import java.util.*;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @Service
 @Transactional
@@ -136,6 +139,39 @@ public class ReportingSIServiceImpl implements ReportingSIService {
             datePart = datePart.split(" ")[1];
         }
         return datePart;
+    }
+
+    private final Logger logger = LoggerFactory.getLogger(ReportingSIService.class);
+
+    public void prepareFilesForDownload(ZipOutputStream zipOut, StatRequest statRequest) throws DirectoryNotExitException, ExtensionNotExicetException {
+        System.setProperty("user.home", "D:");
+        final String home = System.getProperty("user.home");
+        final File directory = new File(home + File.separator + "app" + File.separator + "Balance BAM");
+        logger.info("Home directory: {}", home);
+        logger.info("Target directory: {}", directory);
+
+        if (directory.exists() && directory.isDirectory()) {
+            for (File file : Objects.requireNonNull(directory.listFiles())) {
+                logger.info("Adding file: {}", file.getName());
+                try (InputStream inputStream = Files.newInputStream(file.toPath())) {
+                    if (file.getName().toLowerCase().endsWith("." + statRequest.getExtension())){
+                        ZipEntry zipEntry = new ZipEntry(file.getName());
+                        zipOut.putNextEntry(zipEntry);
+                        byte[] bytes = new byte[8192];
+                        int length;
+                        while ((length = inputStream.read(bytes)) >= 0) {
+                            zipOut.write(bytes, 0, length);
+                        }
+                        zipOut.closeEntry();
+                    }
+
+                } catch (IOException e) {
+                    logger.error("Error adding file to zip: {}", file.getName(), e);
+                }
+            }
+        } else {
+            logger.error("Directory does not exist or is not a directory: {}", directory.getAbsolutePath());
+        }
     }
 }
 

@@ -12,5 +12,6 @@ import lombok.NoArgsConstructor;
 public class StateResponse {
     private String fileName;
     private String fileExtension;
+    private String filePath;
     private Long fileSize;
 }
