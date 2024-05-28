@@ -41,14 +41,13 @@ public class ReportingSIController {
         StreamingResponseBody stream = out -> {
             try (ZipOutputStream zipOut = new ZipOutputStream(response.getOutputStream())) {
                 logger.info("Preparing files for download");
+                logger.info("statRequest: {}", statRequest.getStatName()+" "+ statRequest.getApplicationName()+" "+statRequest.getExtension()+" "+statRequest.getStartDate()+" "+statRequest.getEndDate());
                 reportingSIService.prepareFilesForDownload(zipOut, statRequest);
                 zipOut.finish(); // Ensure all entries are written to the stream
                 logger.info("Files prepared successfully");
             } catch (IOException e) {
                 logger.error("Error while preparing files for download", e);
-            } catch (DirectoryNotExitException e) {
-                throw new RuntimeException(e);
-            } catch (ExtensionNotExicetException e) {
+            } catch (DirectoryNotExitException | ExtensionNotExicetException e) {
                 throw new RuntimeException(e);
             }
         };

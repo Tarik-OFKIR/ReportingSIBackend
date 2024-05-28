@@ -23,6 +23,8 @@ import java.nio.file.Files;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 import org.slf4j.Logger;
@@ -34,9 +36,11 @@ import org.slf4j.LoggerFactory;
 public class ReportingSIServiceImpl implements ReportingSIService {
     AgencyRepository agencyRepository;
     BprDuplicatedRepository bprDuplicatedRepository;
-    private static final List<String> DATE_PATTERNS = List.of(
-            "yyyy-MM-dd", "dd/MM/yyyy", "MM-dd-yyyy", "yyyyMMdd", "dd-MM-yyyy"
-    );
+    private final Logger logger = LoggerFactory.getLogger(ReportingSIService.class);
+//    private static final List<String> DATE_PATTERNS = List.of(
+//            "yyyy-MM-dd", "dd/MM/yyyy", "MM-dd-yyyy", "yyyyMMdd", "dd-MM-yyyy"
+//    );
+    private static final List<String> DATE_FORMATS = Arrays.asList("dd-MM-yyyy", "ddMMyyyy", "dd/MM/yyyy", "MM-yyyy", "yyyy");
     @Override
     public String generateCodeAgency(Long idAgency) throws AgencyNotFoundException, BprDuplicatedNotExicetException {
         String code;
@@ -85,13 +89,13 @@ public class ReportingSIServiceImpl implements ReportingSIService {
     }
 
     private static String[] getStrings(Date startDate, Date endDate, String path, String extinction) throws ExtensionNotExicetException {
-        List<String> dateFormats = Arrays.asList("dd-MM-yyyy", "ddMMyyyy", "dd/MM/yyyy", "MM-yyyy", "yyyy");
+
 
         // Create a FilenameFilter using a lambda expression
         FilenameFilter filter = (dir, name) -> {
             if (name.toLowerCase().endsWith("." + extinction.toLowerCase())) {
                 String fileDateStr = extractDateFromFileName(name, dir.getName());
-                Date fileDate = parseDate(fileDateStr, dateFormats);
+                Date fileDate = parseDate(fileDateStr, DATE_FORMATS);
                 return fileDate != null && !fileDate.before(startDate) && !fileDate.after(endDate);
             }
             return false;
@@ -110,7 +114,7 @@ public class ReportingSIServiceImpl implements ReportingSIService {
     }
 
     public static Date extractDate(String dateString) {
-        for (String pattern : DATE_PATTERNS) {
+        for (String pattern : DATE_FORMATS) {
             try {
                 SimpleDateFormat dateFormat = new SimpleDateFormat(pattern);
                 dateFormat.setLenient(false); // Ensures strict parsing
@@ -141,9 +145,10 @@ public class ReportingSIServiceImpl implements ReportingSIService {
         return datePart;
     }
 
-    private final Logger logger = LoggerFactory.getLogger(ReportingSIService.class);
+
 
     public void prepareFilesForDownload(ZipOutputStream zipOut, StatRequest statRequest) throws DirectoryNotExitException, ExtensionNotExicetException {
+
         System.setProperty("user.home", "D:");
         final String home = System.getProperty("user.home");
         final File directory = new File(home + File.separator + "app" + File.separator + "Balance BAM");
@@ -151,18 +156,31 @@ public class ReportingSIServiceImpl implements ReportingSIService {
         logger.info("Target directory: {}", directory);
 
         if (directory.exists() && directory.isDirectory()) {
+            Date startDate = extractDate(statRequest.getStartDate());
+            Date endDate = extractDate(statRequest.getEndDate());
+            logger.info("Start date: {}", startDate);
+            logger.info("End date: {}", endDate);
             for (File file : Objects.requireNonNull(directory.listFiles())) {
-                logger.info("Adding file: {}", file.getName());
+                logger.info("Checking file: {}", file.getName());
+
                 try (InputStream inputStream = Files.newInputStream(file.toPath())) {
-                    if (file.getName().toLowerCase().endsWith("." + statRequest.getExtension())){
-                        ZipEntry zipEntry = new ZipEntry(file.getName());
-                        zipOut.putNextEntry(zipEntry);
-                        byte[] bytes = new byte[8192];
-                        int length;
-                        while ((length = inputStream.read(bytes)) >= 0) {
-                            zipOut.write(bytes, 0, length);
+                    if (file.getName().toLowerCase().endsWith("." + statRequest.getExtension())) {
+//                        Date fileDate = new Date(file.lastModified());
+                        Date fileDate = extractDateFromFileNameTest(file.getName(), DATE_FORMATS);
+                        logger.info("File date: {}", fileDate);
+                        if (fileDate != null && !fileDate.before(startDate) && !fileDate.after(endDate)) {
+                            logger.info("Adding file: {}", file.getName());
+                            ZipEntry zipEntry = new ZipEntry(file.getName());
+                            zipOut.putNextEntry(zipEntry);
+                            byte[] bytes = new byte[8192];
+                            int length;
+                            while ((length = inputStream.read(bytes)) >= 0) {
+                                zipOut.write(bytes, 0, length);
+                            }
+                            zipOut.closeEntry();
+                        } else {
+                            logger.info("File {} is not in the date range", file.getName()+ " starting: "+startDate+" ending: "+endDate);
                         }
-                        zipOut.closeEntry();
                     }
 
                 } catch (IOException e) {
@@ -172,6 +190,24 @@ public class ReportingSIServiceImpl implements ReportingSIService {
         } else {
             logger.error("Directory does not exist or is not a directory: {}", directory.getAbsolutePath());
         }
+    }
+    private Date extractDateFromFileNameTest(String fileName, List<String> dateFormats) {
+        for (String format : dateFormats) {
+            SimpleDateFormat dateFormat = new SimpleDateFormat(format);
+            String regex = format.replace("dd", "\\d{2}").replace("MM", "\\d{2}").replace("yyyy", "\\d{4}");
+            Pattern pattern = Pattern.compile(regex);
+            Matcher matcher = pattern.matcher(fileName);
+
+            if (matcher.find()) {
+                String dateStr = matcher.group();
+                try {
+                    return dateFormat.parse(dateStr);
+                } catch (ParseException e) {
+                    logger.warn("Failed to parse date: {}", dateStr, e);
+                }
+            }
+        }
+        return null;
     }
 }
 
